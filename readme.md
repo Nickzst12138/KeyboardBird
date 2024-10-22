@@ -53,62 +53,79 @@ Implements the definition of ResNet architecture and supports ResNet with differ
 3. `_make_layer`: Build multiple residual blocks and adjust the network depth.
 
 
-### 3. cutout.py
+
+### 3. train.ipynb
 
 **Function**:
-Implements the Cutout data augmentation technique, which increases data diversity by randomly removing parts of the image area, thereby improving the generalization ability of the model.
+The train.ipynb file implements the training process of the ResNet18 model, loads the CIFAR-10 dataset, performs data augmentation operations, and uses PyTorch's SGD optimizer for model training
+**Key functions**:
+Use the read_dataset function to load training, validation, and test data from the CIFAR-10 dataset and apply Cutout data augmentation.
 
-**Key classes**:
-1. `Cutout`: Responsible for generating a random square mask and applying it to the input image.
+Load the ResNet18 model and modify its last fully connected layer to adapt to the 10-category classification task of CIFAR-10.
+
+Train the model on the training set, calculate the loss value, and evaluate it on the validation set, using CrossEntropyLoss as the loss function and dynamically adjusting the learning rate.
+
+Save the model weights when the validation loss decreases.
+
+# Set up the device
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+# Load the dataset
+batch_size = 128
+train_loader, valid_loader, test_loader = read_dataset(batch_size=batch_size, pic_path='dataset')
+
+# Define the model
+model = ResNet18()
+model.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
+model.fc = torch.nn.Linear(512, n_class)
+model = model.to(device)
+
+# Define the loss function and optimizer
+criterion = nn.CrossEntropyLoss().to(device)
+optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
+
+# Train model
+for epoch in range(1, n_epochs + 1):
+model.train()
+for data, target in train_loader:
+data, target = data.to(device), target.to(device)
+optimizer.zero_grad()
+output = model(data)
+loss = criterion(output, target)
+loss.backward()
+optimizer.step()
+
+---
+
+### 3. test (1)(1).ipynb
+
+**Function**:
+test (1)(1).ipynb file is responsible for loading the trained model, evaluating it on the test set, calculating the accuracy of the model, and saving the quantized 8-bit model.
 
 **Code snippet and explanation**:
 
-class Cutout(object):
-def __init__(self, n_holes, length):
-// Initialize the number of patches to be removed and the size of the patches
-self.n_holes = n_holes
-self.length = length
+# Load the trained model
+model.load_state_dict(torch.load('checkpoint/resnet18_cifar10.pt'))
+model.eval()
 
-def __call__(self, img):
-// Generate a random mask on the image
-h, w = img.size(1), img.size(2)
-mask = np.ones((h, w), np.float32)
-for n in range(self.n_holes):
-y, x = np.random.randint(h), np.random.randint(w)
-y1, y2 = np.clip(y - self.length // 2, 0, h), np.clip(y + self.length // 2, 0, h)
-x1, x2 = np.clip(x - self.length // 2, 0, w), np.clip(x + the length // 2, 0, w)
-mask[y1: y2, x1: x2] = 0.
-mask = torch.from_numpy(mask).expand_as(img)
-img = img * mask
-return img
-```
-- This class increases the randomness of training data and reduces overfitting by randomly generating patches (removed areas) on each image.
+# Quantize the model
+model_int8 = torch.quantization.quantize_dynamic(
+model.cpu(),
+{nn.Linear}, # Quantize the fully connected layer
+dtype=torch.qint8 # Quantize to 8 bits
+)
 
-### 4. readData.py
-
-**Function**:
-Responsible for loading the CIFAR-10 dataset, performing data augmentation, and dividing the training set and validation set. Supports custom batch size, validation set ratio and other parameters.
-
-**Key functions**:
-1. `read_dataset`: Responsible for loading the CIFAR-10 dataset and performing preprocessing (such as random cropping, horizontal flipping, Cutout).
-
-def read_dataset(batch_size=16, valid_size=0.2, num_workers=0, pic_path='dataset'):
-// CIFAR-10 data enhancement, including random cropping, horizontal flipping and normalization
-transform_train = transforms.Compose([
-transforms.RandomCrop(32, padding=4),
-transforms.RandomHorizontalFlip(),
-transforms.ToTensor(),
-transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-Cutout(n_holes=1, length=16),
-])
-// Test set preprocessing
-transform_test = transforms.Compose([
-transforms.ToTensor(),
-transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
-```
-
----
+# Evaluate the model on the test set
+model = model.to(device)
+total_sample = 0
+right_sample = 0
+for data, target in test_loader:
+data, target = data.to(device), target.to(device)
+output = model(data)
+_, pred = torch.max(output, 1)
+correct_tensor = pred.eq(target.data.view_as(pred))
+total_sample += data.size(0)
+right_sample += correct_tensor.sum().item() print(f"Accuracy: {100 * right_sample / total_sample}%") # Save the quantized model torch.save(model_int8.state_dict(), 'checkpoint/resnet18_cifar10_int8.pt') ``` - This class increases the randomness of training data and reduces overfitting by randomly generating patches (removed areas) on each image.
 
 # How to run
 
